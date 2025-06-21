@@ -26,7 +26,7 @@ const serialize  = (session: Session) => {
     const { userId, username } = session
 
     return {
-        userId: session.userId,
+        userId,
         username, 
     }
 }

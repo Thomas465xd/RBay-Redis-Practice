@@ -1,4 +1,4 @@
-import { usersKey } from '$services/keys';
+import { usernamesKey, usersKey } from '$services/keys';
 import { client } from '$services/redis';
 import type { CreateUserAttrs } from '$services/types';
 import { genId } from '$services/utils';
@@ -15,8 +15,18 @@ export const createUser = async (attrs: CreateUserAttrs) => {
     // Generate unique user id to prevent hash table colissions
     const id = genId(); 
 
+    // See if the username is already in the set of usernames, if so throw an error
+    const usernameExists = await client.sIsMember(usernamesKey(), attrs.username)
+
+    if(usernameExists) {
+        throw new Error("Username is already in use")
+    }
+
     // Use node-redis client to create te hash table
-    await client.hSet(usersKey(id), serialize(attrs))
+    Promise.allSettled[(
+        await client.hSet(usersKey(id), serialize(attrs)),
+        await client.sAdd(usernamesKey(), attrs.username)
+    )]
 
     return id; 
 };
