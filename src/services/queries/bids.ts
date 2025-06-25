@@ -1,5 +1,5 @@
 import { bidHistoryKey, itemsKey, itemsPriceKey } from '$services/keys';
-import { client } from '$services/redis';
+import { client, withLock } from '$services/redis';
 import type { CreateBidAttrs, Bid } from '$services/types';
 import { DateTime } from 'luxon';
 import { getItem } from './items';
@@ -8,13 +8,13 @@ export const createBid = async (attrs: CreateBidAttrs) => {
     // Destructure elements from attrs
     const { itemId, amount, createdAt, userId } = attrs;
 
-    return client.executeIsolated(async (isolatedClient) => {
-        // Set up WATCH statement
-        await isolatedClient.watch(itemsKey(itemId))
-
+    // First argument is the key that we want to lock the access to 
+    // Second argument is a callback function that implements all the logic when the lock is set
+    return withLock(itemId, async (lockedClient: typeof client, signal: { expired: boolean }) => {
         // Get the item
         const item = await getItem(itemId)
 
+        //? Validations
         if(!item) {
             throw new Error("Item does not exists");
         }
@@ -32,31 +32,77 @@ export const createBid = async (attrs: CreateBidAttrs) => {
             createdAt.toMillis(), 
         )
 
-        return isolatedClient
-            .multi()
-            .rPush(bidHistoryKey(itemId), serialized)
-            .hSet(itemsKey(item.id), {
+        // chech if callback has taken too long and invalidate it
+        if(signal.expired) {
+            throw new Error("Lock expired, can't write any more data :(")
+        }
+
+        // 3) Writing some data
+        return Promise.all([
+            lockedClient.rPush(bidHistoryKey(itemId), serialized),
+            lockedClient.hSet(itemsKey(item.id), {
                 bids: item.bids + 1, 
                 price: amount,
                 highestBidUserId: userId
-            })
-            .zAdd(itemsPriceKey(), {
+            }),
+            lockedClient.zAdd(itemsPriceKey(), {
                 value: item.id, 
                 score: amount
             })
-            .exec()
-
-        /** 
-        return Promise.all([
-            client.rPush(bidHistoryKey(itemId), serialized),
-            client.hSet(itemsKey(item.id), {
-                bids: item.bids + 1, 
-                price: amount,
-                highestBidUserId: userId
-            })
         ])
-        */
     })
+
+    // return client.executeIsolated(async (isolatedClient) => {
+    //     // Set up WATCH statement
+    //     await isolatedClient.watch(itemsKey(itemId))
+
+    //     // Get the item
+    //     const item = await getItem(itemId)
+
+    //     //? Validations
+    //     if(!item) {
+    //         throw new Error("Item does not exists");
+    //     }
+
+    //     if(item.price >= amount) {
+    //         throw new Error("Bid too low")
+    //     }
+
+    //     if(item.endingAt.diff(DateTime.now()).toMillis() < 0) {
+    //         throw new Error("The auction already closed!")
+    //     }
+
+    //     const serialized = serializeHistory(
+    //         amount, 
+    //         createdAt.toMillis(), 
+    //     )
+
+    //     return isolatedClient
+    //         .multi()
+    //         .rPush(bidHistoryKey(itemId), serialized)
+    //         .hSet(itemsKey(item.id), {
+    //             bids: item.bids + 1, 
+    //             price: amount,
+    //             highestBidUserId: userId
+    //         })
+    //         .zAdd(itemsPriceKey(), {
+    //             value: item.id, 
+    //             score: amount
+    //         })
+    //         .exec()
+
+    //     /** 
+    //     return Promise.all([
+    //         client.rPush(bidHistoryKey(itemId), serialized),
+    //         client.hSet(itemsKey(item.id), {
+    //             bids: item.bids + 1, 
+    //             price: amount,
+    //             highestBidUserId: userId
+    //         })
+    //     ])
+    //     */
+    // })
+    
 };
 
 export const getBidHistory = async (itemId: string, offset = 0, count = 10): Promise<Bid[]> => {
