@@ -16,3 +16,6 @@ export const itemsUniqueViewsKey = (itemId: string) => `items:views#${itemId}`; 
 export const itemsEndingAtKey = () => `items:endingAt`; // Items Ending At sorted Set
 export const bidHistoryKey = (itemId) => `items:history#${itemId}`; // Items Ending At sorted Set
 export const itemsPriceKey = () => `items:price`;
+
+// Index keys
+export const itemsIndexKey = () => `idx:items`;

@@ -1,5 +1,6 @@
 import { createClient, defineScript } from 'redis';
 import { itemsKey, itemsUniqueViewsKey, itemsViewsKey } from "$services/keys";
+import { createIndexes } from './create-indexes';
 
 const client = createClient({
 	socket: {
@@ -70,6 +71,14 @@ const client = createClient({
 });
 
 client.on('error', (err) => console.error(err));
+client.on("connect", async () => {
+    try {
+        await createIndexes(); 
+    } catch (error) {
+        console.error(error)
+    }
+    
+})
 client.connect();
 
 export { client };

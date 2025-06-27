@@ -106,8 +106,8 @@ export const createBid = async (attrs: CreateBidAttrs) => {
 };
 
 export const getBidHistory = async (itemId: string, offset = 0, count = 10): Promise<Bid[]> => {
-    const startIndex = -1 * offset - count;
-    const endIndex = -1 - offset; 
+    const startIndex = offset;
+    const endIndex = offset + count - 1;
 
     const range = await client.lRange(
         bidHistoryKey(itemId),
